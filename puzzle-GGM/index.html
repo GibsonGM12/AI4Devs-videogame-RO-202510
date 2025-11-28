@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puzzle de Imagen - Canvas Game</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Configuración personalizada de Tailwind */
+        :root {
+            --color-primary: 29 78 216; /* blue-700 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* slate-900 */
+        }
+        .dragged-piece {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+            z-index: 10;
+        }
+        .game-card {
+            background-color: #1e293b; /* slate-800 */
+        }
+        #puzzleCanvas {
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.4);
+            transition: transform 0.2s ease-out;
+            cursor: pointer;
+        }
+        /* Clase para el modal de superposición */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(5px);
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 flex items-center justify-center">
+
+    <div id="appContainer" class="w-full max-w-7xl mx-auto p-4 md:p-8">
+
+        <!-- Título principal -->
+        <h1 class="text-3xl md:text-5xl font-extrabold text-white text-center mb-10 tracking-tight">
+            🧩 Rompecabezas
+        </h1>
+
+        <!-- 1. Formulario de Configuración (Pantalla Inicial) -->
+        <div id="setupScreen" class="flex flex-col items-center">
+            <div class="game-card p-8 rounded-xl shadow-2xl w-full max-w-lg">
+                <h2 class="text-2xl font-bold text-white mb-6">Configurar Juego</h2>
+                <form id="setupForm" class="space-y-6">
+
+                    <!-- Subir Imagen -->
+                    <div>
+                        <label for="imageUpload" class="block text-sm font-medium text-gray-300 mb-2">1. Selecciona la Imagen (*)</label>
+                        <input type="file" id="imageUpload" accept="image/*" required 
+                               class="block w-full text-sm text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 transition duration-150 cursor-pointer"/>
+                    </div>
+
+                    <!-- Filas y Columnas -->
+                    <div class="flex space-x-4">
+                        <div class="flex-1">
+                            <label for="rows" class="block text-sm font-medium text-gray-300 mb-2">2. Filas</label>
+                            <input type="number" id="rows" value="4" min="2" max="20" required 
+                                   class="w-full p-3 bg-slate-700 border border-slate-600 text-white rounded-lg focus:ring-blue-500 focus:border-blue-500"/>
+                        </div>
+                        <div class="flex-1">
+                            <label for="cols" class="block text-sm font-medium text-gray-300 mb-2">3. Columnas</label>
+                            <input type="number" id="cols" value="4" min="2" max="20" required 
+                                   class="w-full p-3 bg-slate-700 border border-slate-600 text-white rounded-lg focus:ring-blue-500 focus:border-blue-500"/>
+                        </div>
+                    </div>
+
+                    <!-- Cronómetro Opcional -->
+                    <div>
+                        <label for="timeLimit" class="block text-sm font-medium text-gray-300 mb-2">4. Límite de Tiempo (Minutos, Opcional)</label>
+                        <input type="number" id="timeLimit" value="" placeholder="Ej: 5 (Minutos)" min="1" 
+                               class="w-full p-3 bg-slate-700 border border-slate-600 text-white rounded-lg focus:ring-blue-500 focus:border-blue-500"/>
+                        <p class="text-xs text-gray-400 mt-1">Déjalo vacío para jugar sin límite de tiempo.</p>
+                    </div>
+                    
+                    <button type="submit" 
+                            class="w-full py-3 px-4 bg-green-600 text-white font-semibold rounded-lg shadow-lg hover:bg-green-700 transition duration-200 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50">
+                        Iniciar Rompecabezas
+                    </button>
+                    <p id="formError" class="text-red-400 text-center mt-4 hidden"></p>
+                </form>
+            </div>
+        </div>
+
+        <!-- 2. Pantalla del Juego -->
+        <div id="gameScreen" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                <!-- Panel de Juego (Izquierda/Arriba) -->
+                <div class="lg:col-span-2 game-card p-6 rounded-xl shadow-2xl order-2 lg:order-1">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-bold text-white">Tablero de Juego</h2>
+                        <span id="timerDisplay" class="text-2xl font-mono text-yellow-400 bg-slate-700 px-3 py-1 rounded-md shadow-inner">00:00</span>
+                    </div>
+                    
+                    <!-- Contenedor del Canvas para control de responsividad -->
+                    <div id="canvasContainer" class="w-full aspect-square max-h-[80vh] mx-auto border-4 border-slate-700 rounded-lg overflow-hidden relative">
+                        <canvas id="puzzleCanvas" class="block w-full h-full"></canvas>
+                        <!-- Mensaje de carga para la imagen -->
+                        <div id="loadingOverlay" class="absolute inset-0 bg-slate-800 flex items-center justify-center text-white/50 text-lg">
+                            Cargando imagen...
+                        </div>
+                        <!-- INDICADOR DE DROP: MOVIDO DENTRO DEL CONTENEDOR RELATIVO -->
+                        <div id="pieceDropIndicator" class="hidden absolute border-4 border-yellow-500 rounded-lg pointer-events-none"></div>
+                    </div>
+                </div>
+
+                <!-- Panel de Información (Derecha) -->
+                <div class="space-y-6 order-1 lg:order-2">
+                    
+                    <!-- Estadísticas -->
+                    <div class="game-card p-6 rounded-xl shadow-xl">
+                        <h3 class="text-lg font-semibold text-gray-200 mb-3">Estadísticas</h3>
+                        <div class="space-y-2 text-gray-300">
+                            <p>Movimientos: <span id="movesDisplay" class="font-bold text-blue-400 text-xl">0</span></p>
+                            <p>Tiempo Transcurrido: <span id="timeElapsedDisplay" class="font-bold text-yellow-400 text-xl">0s</span></p>
+                        </div>
+                        <button onclick="UIController.showSetup()" class="w-full mt-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition">
+                            Subir Nueva Imagen
+                        </button>
+                    </div>
+
+                    <!-- Vista Previa -->
+                    <div class="game-card p-6 rounded-xl shadow-xl">
+                        <h3 class="text-lg font-semibold text-gray-200 mb-3">Vista Previa Original</h3>
+                        <div class="w-full aspect-square border border-slate-700 rounded-lg overflow-hidden">
+                            <canvas id="previewCanvas" class="w-full h-full block"></canvas>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-2">Usa esta imagen como referencia para armar el rompecabezas.</p>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Modal de Finalización de Juego -->
+        <div id="endGameModal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+            <div class="bg-white p-8 rounded-xl shadow-2xl max-w-sm w-full text-center transform scale-95 transition-transform duration-300 ease-out">
+                <div id="modalIcon" class="text-6xl mb-4"></div>
+                <h3 id="modalTitle" class="text-3xl font-bold mb-4 text-gray-900"></h3>
+                
+                <div class="space-y-2 mb-6 text-gray-700">
+                    <p class="text-lg">Tiempo Total: <span id="modalTime" class="font-extrabold text-blue-600"></span></p>
+                    <p class="text-lg">Movimientos: <span id="modalMoves" class="font-extrabold text-blue-600"></span></p>
+                </div>
+
+                <div class="flex flex-col space-y-3">
+                    <button onclick="UIController.showSetup()" 
+                            class="py-3 px-4 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition duration-200">
+                        Subir Nueva Imagen
+                    </button>
+                    <button onclick="GameLogic.restartGame()" 
+                            class="py-3 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition duration-200">
+                        Jugar de Nuevo (Misma Imagen)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bloque de Script JavaScript -->
+    <script type="module">
+        // --- 0. Configuración Firebase (Boilerplate Mandatorio) ---
+        // Nota: Esta aplicación es un juego local de un solo jugador y no utiliza Firestore, 
+        // pero se incluye la configuración de autenticación como requisito del entorno.
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        setLogLevel('Debug');
+        let auth, db, userId;
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        
+        if (Object.keys(firebaseConfig).length > 0) {
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            // Autenticación inicial
+            onAuthStateChanged(auth, async (user) => {
+                if (!user) {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined') {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                        userId = auth.currentUser?.uid || crypto.randomUUID();
+                        console.log("Firebase Auth iniciado. User ID:", userId);
+                    } catch (error) {
+                        console.error("Error en la autenticación de Firebase:", error);
+                    }
+                } else {
+                    userId = user.uid;
+                }
+            });
+        }
+        // --- Fin Configuración Firebase ---
+
+
+        // --- 1. Estado Global del Juego ---
+        const gameState = {
+            image: null,           // Objeto Image del usuario
+            rows: 0,               // Número de filas
+            cols: 0,               // Número de columnas
+            puzzlePieces: [],      // Array de objetos de piezas
+            canvasSize: 500,       // Tamaño fijo (ej. 500x500) del canvas para cálculos internos
+            canvasScaleFactor: 1,  // Factor de escala real para responsividad
+            pieceWidth: 0,         // Ancho de una pieza
+            pieceHeight: 0,        // Alto de una pieza
+            
+            moves: 0,              // Contador de movimientos
+            
+            isGameRunning: false,
+            timerInterval: null,
+            startTime: 0,          // Timestamp de inicio
+            timeLimit: null,       // Límite en segundos, o null
+            
+            // Estado de Drag & Drop
+            isDragging: false,
+            draggedPiece: null,
+            dragOffsetX: 0,
+            dragOffsetY: 0
+        };
+
+        // --- 2. Elementos del DOM ---
+        const DOMElements = {
+            setupScreen: document.getElementById('setupScreen'),
+            gameScreen: document.getElementById('gameScreen'),
+            setupForm: document.getElementById('setupForm'),
+            formError: document.getElementById('formError'),
+            imageUpload: document.getElementById('imageUpload'),
+            rowsInput: document.getElementById('rows'),
+            colsInput: document.getElementById('cols'),
+            timeLimitInput: document.getElementById('timeLimit'),
+
+            puzzleCanvas: document.getElementById('puzzleCanvas'),
+            previewCanvas: document.getElementById('previewCanvas'),
+            canvasContainer: document.getElementById('canvasContainer'),
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            pieceDropIndicator: document.getElementById('pieceDropIndicator'),
+
+            timerDisplay: document.getElementById('timerDisplay'),
+            movesDisplay: document.getElementById('movesDisplay'),
+            timeElapsedDisplay: document.getElementById('timeElapsedDisplay'),
+
+            endGameModal: document.getElementById('endGameModal'),
+            modalTitle: document.getElementById('modalTitle'),
+            modalIcon: document.getElementById('modalIcon'),
+            modalTime: document.getElementById('modalTime'),
+            modalMoves: document.getElementById('modalMoves')
+        };
+
+        // Contextos de Canvas
+        const ctx = DOMElements.puzzleCanvas.getContext('2d');
+        const previewCtx = DOMElements.previewCanvas.getContext('2d');
+
+
+        // --- 3. Módulo UIController (Manejo de la Interfaz) ---
+        const UIController = {
+            
+            /** Muestra la pantalla de configuración y oculta el juego. */
+            showSetup() {
+                this.stopTimer();
+                gameState.isGameRunning = false; // Asegurar que el estado de juego se detiene
+                DOMElements.gameScreen.classList.add('hidden');
+                DOMElements.setupScreen.classList.remove('hidden');
+                DOMElements.endGameModal.classList.add('hidden');
+                // Limpiar el Canvas si existía juego anterior
+                ctx.clearRect(0, 0, DOMElements.puzzleCanvas.width, DOMElements.puzzleCanvas.height);
+                DOMElements.timerDisplay.textContent = '00:00';
+            },
+
+            /** Muestra la pantalla de juego y oculta la configuración. */
+            showGame() {
+                DOMElements.setupScreen.classList.add('hidden');
+                DOMElements.gameScreen.classList.remove('hidden');
+                this.updateStats();
+                this.updatePreview();
+                this.resizeCanvas(); // Ajustar el canvas al tamaño del contenedor
+            },
+
+            /** Actualiza el contador de movimientos y el tiempo transcurrido en el panel. */
+            updateStats(elapsedSeconds = 0) {
+                DOMElements.movesDisplay.textContent = gameState.moves;
+                
+                const timeStr = this.formatTime(elapsedSeconds);
+                DOMElements.timeElapsedDisplay.textContent = timeStr;
+                
+                // Mostrar el tiempo restante si hay límite, o el tiempo transcurrido
+                const timerValue = gameState.timeLimit 
+                    ? this.formatTime(Math.max(0, gameState.timeLimit - elapsedSeconds)) 
+                    : timeStr;
+                    
+                DOMElements.timerDisplay.textContent = timerValue;
+                
+                // Si el cronómetro es de cuenta regresiva y llega a cero
+                if (gameState.timeLimit && elapsedSeconds >= gameState.timeLimit && gameState.isGameRunning) {
+                    GameLogic.endGame(false); // Perdiste por tiempo
+                }
+            },
+            
+            /** Dibuja la imagen completa en el canvas de vista previa. */
+            updatePreview() {
+                const img = gameState.image;
+                if (!img) return;
+
+                // Asegurar que el canvas de preview es cuadrado y tiene el mismo tamaño interno que el puzzle
+                DOMElements.previewCanvas.width = gameState.canvasSize;
+                DOMElements.previewCanvas.height = gameState.canvasSize;
+
+                // Dibujar la imagen escalada para que encaje
+                const { dx, dy, dw, dh } = Renderer.calculateImageFit(img);
+                previewCtx.clearRect(0, 0, gameState.canvasSize, gameState.canvasSize);
+                previewCtx.drawImage(img, dx, dy, dw, dh);
+                previewCtx.strokeStyle = '#334155'; // slate-700
+                previewCtx.lineWidth = 4;
+                previewCtx.strokeRect(0, 0, gameState.canvasSize, gameState.canvasSize);
+            },
+            
+            /** Ajusta el tamaño real del elemento <canvas> al contenedor. */
+            resizeCanvas() {
+                const container = DOMElements.canvasContainer;
+                const containerSize = Math.min(container.clientWidth, container.clientHeight);
+
+                // El tamaño del canvas en el DOM es containerSize x containerSize
+                // La resolución interna del canvas (width/height) se mantiene en gameState.canvasSize para cálculos
+                DOMElements.puzzleCanvas.style.width = `${containerSize}px`;
+                DOMElements.puzzleCanvas.style.height = `${containerSize}px`;
+                
+                // Calcular el factor de escala real (DOM / Interno)
+                gameState.canvasScaleFactor = containerSize / gameState.canvasSize;
+                
+                // Redibujar el puzzle para reflejar el cambio de tamaño
+                if (gameState.isGameRunning) {
+                    Renderer.drawPuzzle();
+                }
+            },
+            
+            /** Muestra el modal de victoria/derrota. */
+            showModal(won, totalSeconds) {
+                const timeStr = this.formatTime(totalSeconds);
+                DOMElements.modalTitle.textContent = won ? "¡Rompecabezas Completo!" : "¡Se Acabó el Tiempo!";
+                DOMElements.modalIcon.innerHTML = won ? '🎉' : '⏰';
+                DOMElements.modalTime.textContent = timeStr;
+                DOMElements.modalMoves.textContent = gameState.moves;
+                
+                // Asegurar que el modal está visible
+                DOMElements.endGameModal.classList.remove('hidden');
+                DOMElements.endGameModal.children[0].classList.add('scale-100'); // Pequeña animación
+            },
+
+            /** Formatea segundos a MM:SS o S segundos. */
+            formatTime(seconds) {
+                if (seconds < 60) return `${Math.floor(seconds)}s`;
+                const minutes = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                const minStr = String(minutes).padStart(2, '0');
+                const secStr = String(secs).padStart(2, '0');
+                return `${minStr}:${secStr}`;
+            },
+
+            /** Inicia el cronómetro del juego. */
+            startTimer() {
+                gameState.startTime = Date.now();
+                
+                // Función que se ejecuta cada segundo
+                const update = () => {
+                    if (!gameState.isGameRunning) return;
+                    const elapsed = Math.floor((Date.now() - gameState.startTime) / 1000);
+                    this.updateStats(elapsed);
+                    
+                    // Si hay límite de tiempo, detener si se acaba (ya chequeado en updateStats)
+                };
+
+                // Si hay un intervalo corriendo, lo limpiamos primero
+                this.stopTimer();
+                gameState.timerInterval = setInterval(update, 1000);
+                update(); // Llamada inicial inmediata
+            },
+            
+            /** Detiene el cronómetro. */
+            stopTimer() {
+                if (gameState.timerInterval) {
+                    clearInterval(gameState.timerInterval);
+                    gameState.timerInterval = null;
+                }
+            }
+        };
+
+
+        // --- 4. Módulo Renderer (Dibujo en Canvas) ---
+        const Renderer = {
+            
+            /**
+             * Calcula las coordenadas de la imagen original para dibujar una pieza.
+             * @param {Object} piece - La pieza a dibujar.
+             * @returns {Object} Coordenadas de origen (sx, sy) y destino (dx, dy, dw, dh).
+             */
+            getPieceCoordinates(piece) {
+                const img = gameState.image;
+                const { rows, cols } = gameState;
+                
+                // 1. Calcular las dimensiones de la pieza en la imagen original (source)
+                const originalPieceW = img.width / cols;
+                const originalPieceH = img.height / rows;
+                
+                const originalRow = Math.floor(piece.originalPos / cols);
+                const originalCol = piece.originalPos % cols;
+
+                const sx = originalCol * originalPieceW;
+                const sy = originalRow * originalPieceH;
+                
+                // 2. Calcular la posición y dimensiones en el Canvas (destination)
+                const currentPos = piece.currentPos;
+                const currentRow = Math.floor(currentPos / cols);
+                const currentCol = currentPos % cols;
+                
+                // La posición (x, y) de la pieza en el canvas
+                const dx = currentCol * gameState.pieceWidth;
+                const dy = currentRow * gameState.pieceHeight;
+                
+                // El tamaño de la pieza en el canvas es uniforme
+                const dw = gameState.pieceWidth;
+                const dh = gameState.pieceHeight;
+
+                return { sx, sy, sw: originalPieceW, sh: originalPieceH, dx, dy, dw, dh };
+            },
+            
+            /** * Calcula el ajuste de la imagen al canvas, manteniendo su aspecto. 
+             * Usado para la vista previa.
+             */
+            calculateImageFit(img) {
+                const canvasW = gameState.canvasSize;
+                const canvasH = gameState.canvasSize;
+                const imgRatio = img.width / img.height;
+                const canvasRatio = canvasW / canvasH;
+
+                let dw, dh, dx, dy;
+
+                if (imgRatio > canvasRatio) { // Imagen más ancha que el canvas
+                    dw = canvasW;
+                    dh = canvasW / imgRatio;
+                    dx = 0;
+                    dy = (canvasH - dh) / 2;
+                } else { // Imagen más alta o igual que el canvas
+                    dh = canvasH;
+                    dw = canvasH * imgRatio;
+                    dy = 0;
+                    dx = (canvasW - dw) / 2;
+                }
+                return { dx, dy, dw, dh };
+            },
+
+            /** Dibuja el estado actual del rompecabezas en el canvas. */
+            drawPuzzle() {
+                ctx.clearRect(0, 0, gameState.canvasSize, gameState.canvasSize);
+
+                gameState.puzzlePieces.forEach(piece => {
+                    // No dibujar la pieza arrastrada aquí, se dibuja aparte
+                    if (piece !== gameState.draggedPiece) {
+                        this.drawPiece(piece);
+                    }
+                });
+
+                // Dibujar la cuadrícula para separación visual
+                ctx.strokeStyle = '#0f172a'; // slate-900 (color de fondo)
+                ctx.lineWidth = 2; 
+
+                // Líneas verticales
+                for (let i = 1; i < gameState.cols; i++) {
+                    const x = i * gameState.pieceWidth;
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, gameState.canvasSize);
+                    ctx.stroke();
+                }
+
+                // Líneas horizontales
+                for (let i = 1; i < gameState.rows; i++) {
+                    const y = i * gameState.pieceHeight;
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(gameState.canvasSize, y);
+                    ctx.stroke();
+                }
+
+                // Dibujar la pieza arrastrada al final para que quede encima
+                if (gameState.isDragging && gameState.draggedPiece) {
+                    this.drawPiece(gameState.draggedPiece, gameState.draggedPiece.x, gameState.draggedPiece.y, true);
+                }
+            },
+            
+            /** Dibuja una única pieza en una posición específica. */
+            drawPiece(piece, targetX, targetY, isDragging = false) {
+                const { sx, sy, sw, sh, dx: defaultDx, dy: defaultDy, dw, dh } = this.getPieceCoordinates(piece);
+                
+                const finalDx = targetX !== undefined ? targetX : defaultDx;
+                const finalDy = targetY !== undefined ? targetY : defaultDy;
+
+                // Aplicar sombreado y transformar si se está arrastrando
+                if (isDragging) {
+                    ctx.globalAlpha = 0.85; // Semi-transparente
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                    ctx.shadowBlur = 15;
+                    ctx.shadowOffsetX = 5;
+                    ctx.shadowOffsetY = 5;
+                } else {
+                    ctx.shadowBlur = 0;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
+                }
+
+                // Dibujar la imagen de la pieza
+                ctx.drawImage(
+                    gameState.image, 
+                    sx, sy, sw, sh, 
+                    finalDx, finalDy, dw, dh
+                );
+                
+                // Resetear estado del canvas
+                ctx.globalAlpha = 1.0;
+                ctx.shadowColor = 'transparent';
+            },
+
+            /** Muestra un indicador visual en la posición de destino. */
+            showDropIndicator(targetPiece) {
+                if (!targetPiece) {
+                    DOMElements.pieceDropIndicator.classList.add('hidden');
+                    return;
+                }
+
+                const { dx, dy, dw, dh } = this.getPieceCoordinates(targetPiece);
+                const scale = gameState.canvasScaleFactor;
+                
+                // CORRECCIÓN: Usar las coordenadas internas escaladas directamente,
+                // ya que el indicador es hijo del contenedor relativo.
+                DOMElements.pieceDropIndicator.style.left = `${dx * scale}px`;
+                DOMElements.pieceDropIndicator.style.top = `${dy * scale}px`;
+                DOMElements.pieceDropIndicator.style.width = `${dw * scale}px`;
+                DOMElements.pieceDropIndicator.style.height = `${dh * scale}px`;
+
+                DOMElements.pieceDropIndicator.classList.remove('hidden');
+            }
+        };
+
+
+        // --- 5. Módulo PieceManager (Lógica de Piezas) ---
+        const PieceManager = {
+            
+            /** * Crea y mezcla las piezas iniciales. 
+             * @param {number} rows 
+             * @param {number} cols 
+             */
+            createPieces(rows, cols) {
+                gameState.puzzlePieces = [];
+                const totalPieces = rows * cols;
+
+                // 1. Calcular las dimensiones de la pieza en el canvas interno (gameState.canvasSize x gameState.canvasSize)
+                gameState.pieceWidth = gameState.canvasSize / cols;
+                gameState.pieceHeight = gameState.canvasSize / rows;
+
+                for (let i = 0; i < totalPieces; i++) {
+                    gameState.puzzlePieces.push({
+                        id: i,
+                        originalPos: i,  // Posición donde debe estar
+                        currentPos: i,   // Posición actual (se mezclará)
+                        x: 0,            // Posición X de arrastre (temporal)
+                        y: 0,            // Posición Y de arrastre (temporal)
+                    });
+                }
+                
+                this.shufflePieces();
+            },
+
+            /** Mezcla aleatoriamente las posiciones actuales de las piezas. */
+            shufflePieces() {
+                // Generar un array de posiciones mezcladas
+                const positions = gameState.puzzlePieces.map(p => p.currentPos);
+                
+                // Algoritmo Fisher-Yates shuffle
+                for (let i = positions.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [positions[i], positions[j]] = [positions[j], positions[i]];
+                }
+                
+                // Asignar las nuevas posiciones mezcladas a las piezas
+                gameState.puzzlePieces.forEach((piece, index) => {
+                    piece.currentPos = positions[index];
+                });
+
+                // Asegurar que la mezcla no esté resuelta de inmediato
+                if (GameLogic.checkWin()) {
+                    // Si está resuelto, mezclar de nuevo
+                    console.log("Mezcla resuelta, re-mezclando...");
+                    this.shufflePieces();
+                }
+            }
+        };
+
+
+        // --- 6. Módulo GameLogic (Reglas del Juego) ---
+        const GameLogic = {
+            
+            /** * Intercambia las posiciones en el tablero de dos piezas.
+             * @param {Object} piece1 - Pieza 1.
+             * @param {Object} piece2 - Pieza 2.
+             */
+            swapPieces(piece1, piece2) {
+                if (piece1 === piece2) return;
+
+                // 1. Intercambiar la propiedad 'currentPos'
+                const pos1 = piece1.currentPos;
+                piece1.currentPos = piece2.currentPos;
+                piece2.currentPos = pos1;
+                
+                // 2. Aumentar movimientos
+                gameState.moves++;
+                
+                // CORRECCIÓN: Calcular el tiempo transcurrido actual para evitar el 'reset' visual del cronómetro.
+                const currentElapsed = gameState.isGameRunning ? Math.floor((Date.now() - gameState.startTime) / 1000) : 0;
+                
+                // 3. Actualizar la UI y dibujar
+                Renderer.drawPuzzle();
+                UIController.updateStats(currentElapsed); // Pasar el tiempo correcto
+                
+                // 4. Verificar si el juego ha terminado
+                if (this.checkWin()) {
+                    this.endGame(true);
+                }
+            },
+
+            /** Verifica si el rompecabezas está completo. */
+            checkWin() {
+                return gameState.puzzlePieces.every(piece => piece.currentPos === piece.originalPos);
+            },
+            
+            /** Inicia o reinicia el juego con la configuración actual. */
+            restartGame() {
+                // Detener cualquier juego en curso
+                UIController.stopTimer();
+                
+                // Reiniciar el estado
+                gameState.moves = 0;
+                gameState.isGameRunning = true; // El juego debe estar corriendo para iniciar el temporizador
+                gameState.draggedPiece = null;
+                DOMElements.endGameModal.classList.add('hidden');
+                
+                // Re-mezclar las piezas existentes
+                PieceManager.shufflePieces();
+                
+                // Iniciar contador y renderizar
+                UIController.startTimer();
+                Renderer.drawPuzzle();
+                UIController.updateStats();
+                UIController.showGame();
+            },
+
+            /** * Finaliza el juego y muestra el modal.
+             * @param {boolean} won - Verdadero si ganó, falso si perdió por tiempo.
+             */
+            endGame(won) {
+                if (!gameState.isGameRunning) return;
+                
+                UIController.stopTimer();
+                gameState.isGameRunning = false; // El juego se detiene aquí
+
+                const totalElapsed = Math.floor((Date.now() - gameState.startTime) / 1000);
+                
+                // Renderizar el puzzle final (solucionado si ganó)
+                if (won) {
+                    gameState.puzzlePieces.forEach(p => p.currentPos = p.originalPos);
+                    Renderer.drawPuzzle();
+                }
+                
+                UIController.showModal(won, totalElapsed);
+            }
+        };
+
+
+        // --- 7. Módulo InputHandler (Manejo de Eventos Drag & Drop) ---
+        const InputHandler = {
+            
+            /**
+             * Convierte coordenadas de píxeles del DOM a coordenadas internas del Canvas.
+             * @param {number} clientX - Coordenada X del evento.
+             * @param {number} clientY - Coordenada Y del evento.
+             * @returns {Object} {x, y} en coordenadas internas del Canvas.
+             */
+            getCanvasCoords(clientX, clientY) {
+                const rect = DOMElements.puzzleCanvas.getBoundingClientRect();
+                const scale = gameState.canvasScaleFactor;
+                
+                // Normalizar la posición (clic real - offset del canvas) / factor de escala
+                const x = (clientX - rect.left) / scale;
+                const y = (clientY - rect.top) / scale;
+                
+                return { x, y };
+            },
+
+            /**
+             * Identifica qué pieza se encuentra en las coordenadas internas del Canvas.
+             * @param {number} x - Coordenada X interna.
+             * @param {number} y - Coordenada Y interna.
+             * @returns {Object|null} La pieza o null.
+             */
+            findPieceAt(x, y) {
+                const { pieceWidth, pieceHeight, rows, cols } = gameState;
+                
+                if (x < 0 || y < 0 || x > gameState.canvasSize || y > gameState.canvasSize) {
+                    return null;
+                }
+
+                // Calcular la posición de la cuadrícula
+                const col = Math.floor(x / pieceWidth);
+                const row = Math.floor(y / pieceHeight);
+                const pos = row * cols + col;
+                
+                // Buscar la pieza que tiene esa 'currentPos'
+                return gameState.puzzlePieces.find(p => p.currentPos === pos) || null;
+            },
+
+            /** Inicia el arrastre (MouseDown/TouchStart). */
+            startDrag(event) {
+                if (!gameState.isGameRunning) return;
+
+                // Normalizar evento para soportar ratón y táctil
+                const clientX = event.clientX || event.touches[0].clientX;
+                const clientY = event.clientY || event.touches[0].clientY;
+                
+                const { x: canvasX, y: canvasY } = this.getCanvasCoords(clientX, clientY);
+                const piece = this.findPieceAt(canvasX, canvasY);
+
+                if (piece) {
+                    gameState.isDragging = true;
+                    gameState.draggedPiece = piece;
+                    
+                    // Calcular offset (distancia del clic al borde superior/izquierdo de la pieza)
+                    const { dx, dy } = Renderer.getPieceCoordinates(piece);
+                    gameState.dragOffsetX = canvasX - dx;
+                    gameState.dragOffsetY = canvasY - dy;
+                    
+                    // Impedir el desplazamiento en móviles
+                    event.preventDefault(); 
+                }
+            },
+
+            /** Maneja el movimiento de arrastre (MouseMove/TouchMove). */
+            drag(event) {
+                if (!gameState.isDragging || !gameState.draggedPiece) return;
+
+                const piece = gameState.draggedPiece;
+                
+                // Normalizar evento para soportar ratón y táctil
+                const clientX = event.clientX || event.touches[0].clientX;
+                const clientY = event.clientY || event.touches[0].clientY;
+
+                const { x: canvasX, y: canvasY } = this.getCanvasCoords(clientX, clientY);
+
+                // Calcular la nueva posición de dibujo de la pieza
+                piece.x = canvasX - gameState.dragOffsetX;
+                piece.y = canvasY - gameState.dragOffsetY;
+                
+                // Identificar la pieza de destino para el indicador
+                const dropTarget = this.findPieceAt(canvasX, canvasY);
+                Renderer.showDropIndicator(dropTarget === piece ? null : dropTarget);
+                
+                // Redibujar el puzzle en el loop de requestAnimationFrame
+                Renderer.drawPuzzle();
+
+                event.preventDefault();
+            },
+
+            /** Termina el arrastre (MouseUp/TouchEnd). */
+            endDrag(event) {
+                if (!gameState.isDragging || !gameState.draggedPiece) return;
+
+                const draggedPiece = gameState.draggedPiece;
+                
+                // Normalizar evento para soportar ratón y táctil
+                const clientX = event.clientX || (event.changedTouches && event.changedTouches[0].clientX);
+                const clientY = event.clientY || (event.changedTouches && event.changedTouches[0].clientY);
+
+                const { x: canvasX, y: canvasY } = this.getCanvasCoords(clientX, clientY);
+                const targetPiece = this.findPieceAt(canvasX, canvasY);
+
+                // Resetear estado de arrastre
+                gameState.isDragging = false;
+                gameState.draggedPiece = null;
+                
+                Renderer.showDropIndicator(null); // Ocultar indicador
+
+                if (targetPiece && targetPiece !== draggedPiece) {
+                    // Intercambiar las piezas
+                    GameLogic.swapPieces(draggedPiece, targetPiece);
+                } else {
+                    // Si no se soltó sobre otra pieza, simplemente redibujar el puzzle para centrar la pieza
+                    Renderer.drawPuzzle();
+                }
+            }
+        };
+
+        // --- 8. Event Listeners y Inicialización ---
+
+        // 8.1 Evento de envío del formulario
+        DOMElements.setupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const file = DOMElements.imageUpload.files[0];
+            const rows = parseInt(DOMElements.rowsInput.value);
+            const cols = parseInt(DOMElements.colsInput.value);
+            const timeLimitMins = parseInt(DOMElements.timeLimitInput.value) || 0;
+
+            if (!file || rows < 2 || cols < 2) {
+                DOMElements.formError.textContent = "Por favor, sube una imagen y asegura que filas/columnas sean al menos 2.";
+                DOMElements.formError.classList.remove('hidden');
+                return;
+            }
+            DOMElements.formError.classList.add('hidden');
+            
+            // Mostrar overlay de carga
+            DOMElements.loadingOverlay.classList.remove('hidden');
+            UIController.showGame();
+
+            try {
+                // Crear objeto Image a partir del archivo
+                const img = new Image();
+                img.onload = () => {
+                    gameState.image = img;
+                    gameState.rows = rows;
+                    gameState.cols = cols;
+                    gameState.timeLimit = timeLimitMins > 0 ? timeLimitMins * 60 : null; // Límite en segundos
+                    
+                    // Asignar el tamaño de resolución interna al canvas
+                    DOMElements.puzzleCanvas.width = gameState.canvasSize;
+                    DOMElements.puzzleCanvas.height = gameState.canvasSize;
+
+                    PieceManager.createPieces(rows, cols);
+                    GameLogic.restartGame();
+                    DOMElements.loadingOverlay.classList.add('hidden');
+                };
+                img.onerror = () => {
+                    DOMElements.loadingOverlay.classList.add('hidden');
+                    DOMElements.formError.textContent = "Error al cargar la imagen. Intenta con otro archivo.";
+                    DOMElements.formError.classList.remove('hidden');
+                    UIController.showSetup();
+                };
+                img.src = URL.createObjectURL(file);
+
+            } catch (error) {
+                console.error("Error en la configuración inicial:", error);
+                DOMElements.loadingOverlay.classList.add('hidden');
+                UIController.showSetup();
+            }
+        });
+
+        // 8.2 Eventos de Canvas (Drag & Drop)
+        DOMElements.puzzleCanvas.addEventListener('mousedown', InputHandler.startDrag.bind(InputHandler));
+        window.addEventListener('mousemove', InputHandler.drag.bind(InputHandler));
+        window.addEventListener('mouseup', InputHandler.endDrag.bind(InputHandler));
+
+        // 8.3 Eventos Táctiles (Responsividad móvil)
+        DOMElements.puzzleCanvas.addEventListener('touchstart', InputHandler.startDrag.bind(InputHandler), { passive: false });
+        window.addEventListener('touchmove', InputHandler.drag.bind(InputHandler), { passive: false });
+        window.addEventListener('touchend', InputHandler.endDrag.bind(InputHandler));
+        window.addEventListener('touchcancel', InputHandler.endDrag.bind(InputHandler));
+
+        // 8.4 Evento de redimensionamiento de ventana (Responsividad)
+        window.addEventListener('resize', UIController.resizeCanvas.bind(UIController));
+
+        // Inicializar la vista
+        window.onload = () => {
+            UIController.showSetup();
+            // Asegurar que el canvas tiene el mismo tamaño interno que el de vista previa
+            DOMElements.previewCanvas.width = gameState.canvasSize;
+            DOMElements.previewCanvas.height = gameState.canvasSize;
+        };
+
+        // --- CORRECCIÓN DE ERROR: Exponer módulos a la ventana global para los onclick inline ---
+        window.UIController = UIController;
+        window.GameLogic = GameLogic;
+    </script>
+
+</body>
+</html>
