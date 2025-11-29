@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Puzzle de Imagen - Canvas Game</title>
+    <title>Puzzle de Imagen</title>
     <!-- Carga de Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -165,44 +165,6 @@
 
     <!-- Bloque de Script JavaScript -->
     <script type="module">
-        // --- 0. Configuración Firebase (Boilerplate Mandatorio) ---
-        // Nota: Esta aplicación es un juego local de un solo jugador y no utiliza Firestore, 
-        // pero se incluye la configuración de autenticación como requisito del entorno.
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        setLogLevel('Debug');
-        let auth, db, userId;
-
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        
-        if (Object.keys(firebaseConfig).length > 0) {
-            const app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            // Autenticación inicial
-            onAuthStateChanged(auth, async (user) => {
-                if (!user) {
-                    try {
-                        if (typeof __initial_auth_token !== 'undefined') {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                        userId = auth.currentUser?.uid || crypto.randomUUID();
-                        console.log("Firebase Auth iniciado. User ID:", userId);
-                    } catch (error) {
-                        console.error("Error en la autenticación de Firebase:", error);
-                    }
-                } else {
-                    userId = user.uid;
-                }
-            });
-        }
-        // --- Fin Configuración Firebase ---
-
-
         // --- 1. Estado Global del Juego ---
         const gameState = {
             image: null,           // Objeto Image del usuario
@@ -881,7 +843,7 @@
             DOMElements.previewCanvas.height = gameState.canvasSize;
         };
 
-        // --- CORRECCIÓN DE ERROR: Exponer módulos a la ventana global para los onclick inline ---
+        // --- EXPOSICIÓN DE MÓDULOS A LA VENTANA GLOBAL para los onclick inline ---
         window.UIController = UIController;
         window.GameLogic = GameLogic;
     </script>
